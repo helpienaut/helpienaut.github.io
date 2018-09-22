@@ -1,0 +1,266 @@
+<html><head><title>Steemit Post Filtering</title>
+    <style>
+// from https://loading.io/css/
+lds-ellipsis {
+  display: inline-block;
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+.lds-ellipsis div {
+  position: absolute;
+  top: 27px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #cef;
+  animation-timing-function: cubic-bezier(0, 1, 1, 0);
+}
+.lds-ellipsis div:nth-child(1) {
+  left: 6px;
+  animation: lds-ellipsis1 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(2) {
+  left: 6px;
+  animation: lds-ellipsis2 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(3) {
+  left: 26px;
+  animation: lds-ellipsis2 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(4) {
+  left: 45px;
+  animation: lds-ellipsis3 0.6s infinite;
+}
+@keyframes lds-ellipsis1 {
+  0% {
+    transform: scale(0);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes lds-ellipsis3 {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(0);
+  }
+}
+@keyframes lds-ellipsis2 {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(19px, 0);
+  }
+}
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+    <script src="https://unpkg.com/dsteem@^0.9.0/dist/dsteem.js"></script>
+<script src="dist/jszip.min.js"></script>
+<script async="" src="https://cdn.rawgit.com/eligrey/FileSaver.js/e9d941381475b5df8b7d7691013401e171014e89/FileSaver.min.js"></script>
+<script>
+  var client = new dsteem.Client('https://api.steemit.com');
+  var allPosts = [];
+
+  function loadPosts(account, start, showPayout, callback) {
+    return getPosts(account, start, [], new Set(), showPayout, callback);
+  }
+
+  function getPosts(account, start, posts, visitedPermlinks, showPayout, callback) {
+    let last_trans = start;
+  
+    console.log(`Fetching account history for ${account} at ${start}`);
+    $('#loading').toggle(true);
+    client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
+      let hasError = false;
+      const postFetchPromises = [];
+      if (!hasError) {
+        result.reverse();
+
+        result.forEach(function(trans) {
+          var op = trans[1].op;
+
+          if(op[0] == 'comment') {
+            const post = op[1];
+            
+            if (post.parent_author === '' && post.author === account && post.title) {
+              if (!visitedPermlinks.has(post.permlink)) {
+                visitedPermlinks.add(post.permlink);
+
+                const jsonMetadata = JSON.parse(post.json_metadata);
+
+                const postData = {
+                  author: account,
+                  timestamp: trans[1].timestamp,
+                  title: post.title,
+                  permlink: post.permlink,
+                  tags: jsonMetadata.tags,
+                };
+
+if (showPayout) {                
+postFetchPromises.push(client.database.call('get_content', [post.author, post.permlink]).then(result => {
+          postData.pending_payout = result.pending_payout_value;
+          postData.author_payout = result.total_payout_value;
+          postData.curator_payout = result.curator_payout_value;
+      }, error => {
+        console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
+        console.log(error);
+      }));
+}
+                posts.push(postData);
+              }
+            }
+          }
+          // Save the ID of the last transaction that was processed.
+          last_trans = trans[0];
+        });
+
+        if(last_trans > 0 && last_trans != start) {
+        } else {
+          if (last_trans > 0) {
+            console.log('Missing account history.... last trans: ' + last_trans);
+            hasError = true;
+          }
+        }
+      }
+
+      if (hasError) {
+        // add indication that loading failed
+        posts.unshift({
+          author: account,
+          timestamp: 'Error while loading',
+          title: '',
+          permlink: '',
+          tags: '',
+        });
+      }
+      Promise.all(postFetchPromises).then(result => {
+        callback(posts, last_trans);
+      });
+    }, (err) => {
+      let hasError = false;
+      if (err) {
+        console.log('error');
+        console.log(err);
+        hasError = true;
+      }
+      if (hasError) {
+        // add indication that loading failed
+        posts.unshift({
+          author: account,
+          timestamp: 'Error while loading',
+          title: '',
+          permlink: '',
+          tags: '',
+        });
+      }
+      callback(posts);
+    }); 
+  }
+
+  function updateCount() {
+      $('#counter').html(($('#data-table tr').length - 1) + ' posts');
+  }
+    
+  function printPosts(posts, filterFn, useMarkdownLink, showPayout) {
+    const filteredPosts = posts.filter(filterFn);
+    allPosts.push.apply(allPosts, filteredPosts);
+    filteredPosts.forEach(post => {
+      const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
+      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + (showPayout ? (post.pending_payout + '</td><td>' + post.author_payout + '</td><td>' + post.curator_payout + '</td>') : '</td>') + '</tr>');
+    });
+    updateCount();
+  }
+  
+  function loadAll(account, start, filter, useMarkdownLink, showPayout) {
+    loadPosts(account, start, showPayout, (posts, last_trans) => {
+      printPosts(posts, filter, useMarkdownLink, showPayout);
+      $('#loading').toggle(false);
+      if (last_trans > 0 && last_trans != start) {
+        loadAll(account, last_trans, filter, useMarkdownLink, showPayout);
+      } else if (last_trans == 0) {
+        $('#download').toggle(true);
+      }
+    });
+  }
+
+  function downloadZip(posts) {
+    if (!posts || posts.length == 0) {
+      return;
+    }
+    const zip = new JSZip();
+    const promises = posts.map(post => {
+      return client.database.call('get_content', [post.author, post.permlink]).then(result => {        
+        zip.file(`${post.permlink}.txt`, result.body);
+      }, error => {
+        console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
+        console.log(error);
+      });
+    });
+      
+    const author = posts[0].author;
+    
+    Promise.all(promises).then(results => {
+      zip.generateAsync({type:"blob"})
+        .then(function (blob) {
+          saveAs(blob, `${author}.zip`);
+      });
+    });
+  }
+
+  $(function() {
+    //https://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript/21152762#21152762
+    var qd = {};
+    if (location.search)
+      location.search.substr(1).split("&").forEach(function(item) {
+        var s = item.split("="),
+          k = s[0],
+          v = s[1] && decodeURIComponent(s[1]); //  null-coalescing / short-circuit
+       //(k in qd) ? qd[k].push(v) : qd[k] = [v]
+       (qd[k] = qd[k] || []).push(v) // null-coalescing / short-circuit
+    })
+    var tags = qd.tags && qd.tags[0] != "" ? qd.tags[0].split(",") : [];
+    if (qd.account && qd.account[0] != "") {
+      const account = qd.account[0];
+      $('#params input[name="account"').val(account);
+      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, qd.markdownLink && qd.markdownLink[0] != "",
+qd.showPayout && qd.showPayout[0] != "");
+    }
+    if (tags.length > 0) {
+      $('#params input[name="tags"').val(tags);
+    }
+    if (qd.markdownLink && qd.markdownLink[0] != "") {
+      $('#params input[name="markdownLink"').prop("checked", qd.markdownLink[0]);
+    }
+    if (qd.showPayout && qd.showPayout[0] != "") {
+      $('#params input[name="showPayout"').prop("checked", qd.showPayout[0]);
+    }
+  });
+</script>
+  </head>
+  <body>
+      Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a>
+  <form method="get" id="params">
+    <table><tbody>
+      <tr><td>Account: </td><td><input type="text" name="account" /></td></tr>
+      <tr><td>Tags: </td><td><input type="text" name="tags" /></td></tr>
+      <tr><td>Use Markdown Link: </td><td><input type="checkbox" name="markdownLink" /></td></tr>
+      <tr><td>Show Payout: </td><td><input type="checkbox" name="showPayout" /></td></tr>
+    </tbody></table>
+    <input type="submit" value="Fetch" />
+  </form>
+  <hr />
+  <table id="data-table">
+    <tbody><tr><td>Time</td><td>Tags</td><td>Post</td><td>Pending Payout</td><td>Author Payout</td><td>Curator Payout</td></tr>
+  </tbody></table>
+  <div id="counter"></div>
+  <div id="loading" style="position: relative; display: none">
+      <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
+  </div>
+    <div id="download" style="position: relative; display: none">
+      <input type='button' onClick='downloadZip(allPosts);' value='Download' />
+    </div>    
+</body></html>
