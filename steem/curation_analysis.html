@@ -146,7 +146,8 @@ lds-ellipsis {
                   const totalSbd = getAmount(post.total_payout_value) + 
                         getAmount(post.curator_payout_value);
 
-                  const votes = post.active_votes.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
+                  const votes = post.active_votes.sort((a,b) => Date.parse(a.time) - Date.parse(b.time))
+                      .filter(v => v.rshares > 0);
       
                   let prevRshares = 0;
                   
