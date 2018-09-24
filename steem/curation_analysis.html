@@ -185,6 +185,11 @@ lds-ellipsis {
                               totalSbd
                           });
                           accountVoterCuration = actualCuration.voterCurationPortion;
+                          
+                          if (accountVoterCuration.voterCurationPortion > optVote.voterCuration) {
+                              optVote.voterCuration = accountVoterCuration.voterCurationPortion;
+                              optVote.voteAgeMillis = accountVoterCuration.voteAgeMillis;
+                          }
                       } else {
                           // include voter rshares vote
                           prevRshares += parseInt(vote.rshares);
