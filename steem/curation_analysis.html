@@ -140,6 +140,7 @@ lds-ellipsis {
               const curationReward = op[1];
               if (!votedUser || curationReward.comment_author === votedUser) {
               postFetchPromises.push(client.database.call('get_content', [curationReward.comment_author, curationReward.comment_permlink]).then(post => {
+                  if (post.parent_author === '') {
       
                   const createdTime = post.created;
                   const totalSbd = getAmount(post.total_payout_value) + 
@@ -223,6 +224,7 @@ lds-ellipsis {
                   sumVoteTime += Math.min(accountVoteTimeMillis, 30*60000);
                   sumWeightedOptVoteTime += optRatio * Math.min(optVote.voteAgeMillis, 30*60000);
                   sumWeights += optRatio;
+              }
               }, error => {
                   console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
                   console.log(error);
