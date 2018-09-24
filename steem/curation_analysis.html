@@ -1,0 +1,292 @@
+<html><head><title>Steemit Curation Analysis</title>
+    <style>
+// from https://loading.io/css/
+lds-ellipsis {
+  display: inline-block;
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+.lds-ellipsis div {
+  position: absolute;
+  top: 27px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #cef;
+  animation-timing-function: cubic-bezier(0, 1, 1, 0);
+}
+.lds-ellipsis div:nth-child(1) {
+  left: 6px;
+  animation: lds-ellipsis1 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(2) {
+  left: 6px;
+  animation: lds-ellipsis2 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(3) {
+  left: 26px;
+  animation: lds-ellipsis2 0.6s infinite;
+}
+.lds-ellipsis div:nth-child(4) {
+  left: 45px;
+  animation: lds-ellipsis3 0.6s infinite;
+}
+@keyframes lds-ellipsis1 {
+  0% {
+    transform: scale(0);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes lds-ellipsis3 {
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(0);
+  }
+}
+@keyframes lds-ellipsis2 {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(19px, 0);
+  }
+}
+    </style>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+    <script src="https://cdn.steemjs.com/lib/latest/steem.min.js"></script>
+<script src="dist/jszip.min.js"></script>
+<script async="" src="https://cdn.rawgit.com/eligrey/FileSaver.js/e9d941381475b5df8b7d7691013401e171014e89/FileSaver.min.js"></script>
+<script>
+  let lastStart = -1;
+  let account = '';
+  let votedUser = '';
+
+  function getAmount(v) {
+    return Number(v.split(' ')[0]);
+  }
+
+  function computeCuration(info) {
+      const {vote, createdTime, prevRshares, totalRshares, totalSbd} = info;
+      const voteAgeMillis = Date.parse(vote.time) - Date.parse(createdTime);
+      const voteRshares = parseInt(vote.rshares);
+      const voteValue = voteRshares * totalSbd / totalRshares;
+      const curation = (Math.sqrt(voteRshares+prevRshares) - Math.sqrt(prevRshares))*totalSbd/(4*Math.sqrt(totalRshares));
+      const authorCurationPortion = Math.max(0,Math.min((1000*60*30 - voteAgeMillis)/(1000*60*30), 1))*curation;
+      const voterCurationPortion = curation - authorCurationPortion;
+      const authorVotePortion = 3*voteRshares*totalSbd / (4*totalRshares);
+      return { voteAgeMillis, voterCurationPortion };
+  }
+    
+  function appendAnalysis(info) {
+      /**
+      {
+        created: post.created,
+        author: post.author,
+        permlink: post.permlink,
+        optVoteTimeMin: optVote.voteAgeMillis / 60000,
+        optVoteCuration: optVote.voterCuration,
+        accountVoteTimeMin: accountVoteTimeMillis / 60000,
+        accountVoterCuration,
+        optRatio
+      }
+      */
+      color = '#ffffff';
+      if (info.optRatio > 2) {
+          color = '#ffffdd';
+      }
+      if (info.optRatio > 5) {
+          color = '#ffeedd';
+      }
+      if (info.optRatio > 10) {
+          color = '#ffdddd';
+      }
+      $('#data-table tr:last').after('<tr style="background-color: ' + color + ';"><td>' + info.created + '</td><td>' + info.author + '</td><td>' + info.permlink + '</td><td>' + info.optVoteTimeMin +  '</td><td>' + info.optVoteCuration + '</td><td>' + info.accountVoteTimeMin + '</td><td>' + info.accountVoterCuration + '</td><td>' + info.optRatio + '</td></tr>');
+  }
+    
+  function loadCurations(account, start, votedUser, callback) {
+    return getCurations(account, start, votedUser, callback);
+  }
+
+  function getCurations(account, start, votedUser, callback) {
+    let lastTrans = start;
+  
+    console.log(`Fetching account history for ${account} at ${start}`);
+    $('#loading').toggle(true);
+    $('#loadmore').toggle(false);
+    steem.api.getAccountHistory(account, start, (start < 0) ? 10000 : Math.min(start, 10000), (err, result) => {
+      let hasError = false;
+      if (err) {
+        console.log('error');
+        console.log(err);
+        hasError = true;
+      }  
+      const postFetchPromises = [];
+      if (!hasError) {
+        result.reverse();
+
+        result.forEach(function(trans) {
+          var op = trans[1].op;
+
+          if (op[0] == 'curation_reward') {
+              const curationReward = op[1];
+              if (!votedUser || curationReward.comment_author === votedUser) {
+              postFetchPromises.push(steem.api.getContent(curationReward.comment_author, curationReward.comment_permlink, function(err, post) {
+      
+                  const createdTime = post.created;
+                  const totalSbd = getAmount(post.total_payout_value) + 
+                        getAmount(post.curator_payout_value);
+
+                  const votes = post.active_votes.sort((a,b) => Date.parse(a.time) - Date.parse(b.time));
+      
+                  let prevRshares = 0;
+                  
+                  const totalRshares = votes.reduce((amt, v) => amt + parseInt(v.rshares), 0);
+                  
+                  const accountVote = votes.find(v => v.voter === account);      
+                  const accountVoteTimeMillis = (Date.parse(accountVote.time) - Date.parse(post.created));
+                  
+                  let accountVoterCuration = 0;
+                  const optVote = { voteAgeMillis : accountVoteTimeMillis, voterCuration : 0 };
+
+
+                  const firstVote = votes[0];
+      
+                  // compute what happens if account voted right before this voter
+                  const curationBeforeFirst = computeCuration({
+                      vote: {...firstVote, rshares: accountVote.rshares},
+                      createdTime,
+                      prevRshares,
+                      totalRshares,
+                      totalSbd
+                  });
+                  if (curationBeforeFirst.voterCurationPortion > optVote.voterCuration) {
+                      optVote.voterCuration = curationBeforeFirst.voterCurationPortion;
+                      optVote.voteAgeMillis = curationBeforeFirst.voteAgeMillis;
+                  }
+                  
+                  votes.forEach(vote => {          
+                      if (vote.voter === account) {
+                          const actualCuration = computeCuration({
+                              vote,
+                              createdTime,
+                              prevRshares,
+                              totalRshares,
+                              totalSbd
+                          });
+                          accountVoterCuration = actualCuration.voterCurationPortion;
+                      } else {
+                          // include voter rshares vote
+                          prevRshares += parseInt(vote.rshares);
+            
+                          // compute what happens if account voted right after this voter
+                          const curationAfterVote = computeCuration({
+                              vote: {...vote, rshares: accountVote.rshares},
+                              createdTime,
+                              prevRshares,
+                              totalRshares,
+                              totalSbd
+                          });
+        
+                          if (curationAfterVote.voterCurationPortion > optVote.voterCuration) {
+                              optVote.voterCuration = curationAfterVote.voterCurationPortion;
+                              optVote.voteAgeMillis = curationAfterVote.voteAgeMillis;
+                          }  
+                      }
+                  });
+                  
+                  
+                  const optRatio = (optVote.voterCuration / accountVoterCuration);
+                  appendAnalysis({
+                      created: post.created,
+                      author: post.author,
+                      permlink: post.permlink,
+                      optVoteTimeMin: optVote.voteAgeMillis / 60000,
+                      optVoteCuration: optVote.voterCuration,
+                      accountVoteTimeMin: accountVoteTimeMillis / 60000,
+                      accountVoterCuration,
+                      optRatio
+                  });
+
+              })); 
+              }
+          }
+          // Save the ID of the last transaction that was processed.
+          lastTrans = trans[0];
+        });
+
+        if(lastTrans > 0 && lastTrans != start) {
+        } else {
+          if (lastTrans > 0) {
+            console.log('Missing account history.... last trans: ' + lastTrans);
+            hasError = true;
+          }
+        }
+      }
+
+      if (hasError) {
+        // add indication that loading failed
+        $('#error').html('Error while loading.');
+      }
+      Promise.all(postFetchPromises).then(result => {
+        callback(lastTrans);
+      });
+    }); 
+  }
+    
+  
+  
+  function loadAll(account, start, votedUser) {
+    loadCurations(account, start, votedUser, (lastTrans) => {
+      $('#loading').toggle(false);
+      $('#loadmore').toggle(true);
+      lastStart = lastTrans;
+    });
+  }
+
+  $(function() {
+    //https://stackoverflow.com/questions/901115/how-can-i-get-query-string-values-in-javascript/21152762#21152762
+    var qd = {};
+    if (location.search)
+      location.search.substr(1).split("&").forEach(function(item) {
+        var s = item.split("="),
+          k = s[0],
+          v = s[1] && decodeURIComponent(s[1]); //  null-coalescing / short-circuit
+       //(k in qd) ? qd[k].push(v) : qd[k] = [v]
+       (qd[k] = qd[k] || []).push(v) // null-coalescing / short-circuit
+    })
+    if (qd.account && qd.account[0] != "") {
+      account = qd.account[0];
+      votedUser = qd.votedUser && qd.votedUser[0] != "" ? qd.votedUser[0] : '';
+      $('#params input[name="account"').val(account);
+      $('#params input[name="votedUser"').val(votedUser);  
+      loadAll(account, lastStart, votedUser);
+    }
+  });
+</script>
+  </head>
+  <body>
+      Problems? Suggestions? File issues <a href="https://github.com/eonwarped/eonwarped.github.io/issues">here!</a>
+  <form method="get" id="params">
+    <table><tbody>
+      <tr><td>Account: </td><td><input type="text" name="account" /></td></tr>
+      <tr><td>VotedUser: </td><td><input type="text" name="votedUser" /></td></tr>
+    </tbody></table>
+    <input type="submit" value="Analyze" />
+  </form>
+  <hr />
+  <table id="data-table">
+    <tbody><tr><td>Time</td><td>Author</td><td>Post</td><td>Optimal Vote Time in Minutes</td><td>Optimal Vote Reward</td><td>Actual Vote Time in Minutes</td><td>Actual Vote Reward</td><td>Opt to Actual Ratio</td></tr>
+  </tbody></table>
+  <div id="error"></div>
+  <div id="loading" style="position: relative; display: none">
+      <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
+  </div>
+  <div id="loadmore">
+      <a href='#' onClick='loadAll(account, lastStart, votedUser)'>Load More</a>
+  </div>
+</body></html>
