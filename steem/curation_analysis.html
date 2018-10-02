@@ -64,6 +64,8 @@ lds-ellipsis {
     
   const client = new dsteem.Client('https://api.steemit.com');
     
+  const reverseAuctionTimeMin = 15;
+    
   let lastStart = -1;
   let account = '';
   let votedUser = '';
@@ -85,8 +87,8 @@ lds-ellipsis {
       const voteRshares = parseInt(vote.rshares);
       const voteValue = voteRshares * totalSbd / totalRshares;
       const curation = (Math.sqrt(voteRshares+prevRshares) - Math.sqrt(prevRshares))*totalSbd/(4*Math.sqrt(totalRshares));
-      const authorCurationPortion = Math.max(0,Math.min((1000*60*30 - voteAgeMillis)/(1000*60*30), 1))*curation;
-      const voterCurationPortion = curation - authorCurationPortion;
+      const nobodyCurationPortion = Math.max(0,Math.min((1000*60*reverseAuctionTimeMin - voteAgeMillis)/(1000*60*reverseAuctionTimeMin), 1))*curation;
+      const voterCurationPortion = curation - nobodyCurationPortion;
       const authorVotePortion = 3*voteRshares*totalSbd / (4*totalRshares);
       return { voteAgeMillis, voterCurationPortion };
   }
@@ -311,6 +313,7 @@ lds-ellipsis {
     <body>
       Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a>
       <h1>Curation Optimization Report</h1>
+      Assumes 15 minute curation window. Not accurate for older posts.
       <form method="get" id="params">
           <table><tbody>
               <tr><td>Voter: </td><td><input type="text" name="account" /></td></tr>
