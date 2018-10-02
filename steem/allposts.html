@@ -227,6 +227,18 @@ qd.showPayout && qd.showPayout[0] != "");
       $('#params input[name="showPayout"').prop("checked", qd.showPayout[0]);
     }
   });
+    
+  function submitForm() {
+      const account = $('#params input[name="account"').val();
+      const tagString = $('#params input[name="tags"').val();
+      const tags = tagString != "" ? tags.split(",") : [];
+      const markdownLink = $('#params input[name="markdownLink"').prop('checked');
+      const showPayout = $('#params input[name="showPayout"').prop('checked');
+      
+      $("#data-table tr:gt(0)").detach();
+      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, markdownLink,
+showPayout);
+  }
 </script>
   </head>
   <body>
@@ -238,7 +250,7 @@ qd.showPayout && qd.showPayout[0] != "");
       <tr><td>Use Markdown Link: </td><td><input type="checkbox" name="markdownLink" /></td></tr>
       <tr><td>Show Payout: </td><td><input type="checkbox" name="showPayout" /></td></tr>
     </tbody></table>
-    <input type="submit" value="Fetch" />
+    <input type="button" onclick="submitForm()" value="Fetch" />
   </form>
   <hr />
   <table id="data-table">
