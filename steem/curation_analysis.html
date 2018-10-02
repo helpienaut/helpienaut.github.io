@@ -142,7 +142,7 @@ lds-ellipsis {
               const curationReward = op[1];
               if (!votedUser || curationReward.comment_author === votedUser) {
               postFetchPromises.push(client.database.call('get_content', [curationReward.comment_author, curationReward.comment_permlink]).then(post => {
-                  if (post.parent_author === '') {
+                  if (post.parent_author === '' && Date.parse(Date())-Date.parse(post.created) <= 14*24*60*60*1000) {
       
                   const createdTime = post.created;
                   const totalSbd = getAmount(post.total_payout_value) + 
@@ -313,7 +313,7 @@ lds-ellipsis {
     <body>
       Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a>
       <h1>Curation Optimization Report</h1>
-      Assumes 15 minute curation window. Not accurate for older posts.
+      Assumes 15 minute curation window. From posts created in the last 14 days.
       <form method="get" id="params">
           <table><tbody>
               <tr><td>Voter: </td><td><input type="text" name="account" /></td></tr>
