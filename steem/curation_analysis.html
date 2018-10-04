@@ -1,4 +1,6 @@
 <html><head><title>Steemit Curation Analysis</title>
+     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    
     <style>
 // from https://loading.io/css/
 lds-ellipsis {
@@ -128,7 +130,6 @@ lds-ellipsis {
   
     console.log(`Fetching account history for ${account} at ${start}`);
     $('#loading').toggle(true);
-    $('#loadmore').toggle(false);
     client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
       let hasError = false;
       const postFetchPromises = [];
@@ -271,7 +272,7 @@ lds-ellipsis {
       const avgPayout = totalPayout / numPosts;
       const avgVoteTime = (sumVoteTime / numPosts) / 60000;
       const recVoteTime = (sumWeightedOptVoteTime / sumWeights) / 60000;
-      summary += '<table><tbody>';
+      summary += '<table class="table"><tbody>';
       summary += '<tr><td>Number of Posts:</td><td>' + numPosts + '</td></tr>';
       summary += '<tr><td>Total Post Payout:</td><td>' + totalPayout + ' STU</td></tr>';
       summary += '<tr><td>Average Post Payout:</td><td>' + avgPayout + ' STU</td></tr>';
@@ -284,7 +285,6 @@ lds-ellipsis {
   function loadAll(account, start, votedUser) {
     loadCurations(account, start, votedUser, (lastTrans) => {
       $('#loading').toggle(false);
-      $('#loadmore').toggle(true);
       adjustSummary();
       lastStart = lastTrans;
     });
@@ -311,30 +311,36 @@ lds-ellipsis {
   });
 </script>
 </head>
-    <body>
-      Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a>
-      <h1>Curation Optimization Report</h1>
-      Assumes 15 minute curation window. From curations rewarded in the last 7 days.
+  <body>
+    <div class="container">
+      <div class="jumbotron">
+          <h2>Curation Optimization Report</h2>
+          <p> Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a></p>
+      
+          <p>Assumes 15 minute curation window. From curations rewarded in the last 7 days.</p>
+      </div>
       <form method="get" id="params">
-          <table><tbody>
-              <tr><td>Voter: </td><td><input type="text" name="account" /></td></tr>
-              <tr><td>Recipient: </td><td><input type="text" name="votedUser" /></td></tr>
-              </tbody></table>
-          <input type="submit" value="Analyze" />
+          <div class="form-group">
+              <label for="account">Voter</label> 
+              <input type="text" class="form-control col-sm-3" name="account" id="account" />
+          </div>
+          <div class="form-group">
+              <label for="votedUser">Recipient</label>
+              <input type="text" class="form-control col-sm-3" name="votedUser" id="votedUser" />
+          </div>
+          <input class="btn btn-primary" type="submit" value="Analyze" />
       </form>
       <hr />
-      <table id="data-table">
+      <table id="data-table" class="table table-striped">
           <tbody><tr><td>Time</td><td>Author</td><td>Post</td><td>Optimal Vote Time in Minutes</td><td>Optimal Vote Reward</td><td>Actual Vote Time in Minutes</td><td>Actual Vote Reward</td><td>Opt to Actual Ratio</td></tr>
           </tbody></table>
       <div id="error"></div>
       <div id="loading" style="position: relative; display: none">
       <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
       </div>
-      <div id="loadmore">
-          <a href='#' onClick='loadAll(account, lastStart, votedUser)'>Load More</a>
-      </div>
       <hr>
       <h1>Summary</h1>
       <div id="summary"></div>
+      </div>
     </body>
 </html>
