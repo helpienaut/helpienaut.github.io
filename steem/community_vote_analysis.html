@@ -264,21 +264,6 @@ lds-ellipsis {
         }); 
     });
   }
-    
-  function adjustSummary() {
-      let summary = '';
-      const avgPayout = totalPayout / numPosts;
-      const avgVoteTime = (sumVoteTime / numPosts) / 60000;
-      const recVoteTime = (sumWeightedOptVoteTime / sumWeights) / 60000;
-      summary += '<table class="table"><tbody>';
-      summary += '<tr><td>Number of Posts:</td><td>' + numPosts + '</td></tr>';
-      summary += '<tr><td>Total Post Payout:</td><td>' + totalPayout + ' STU</td></tr>';
-      summary += '<tr><td>Average Post Payout:</td><td>' + avgPayout + ' STU</td></tr>';
-      summary += '<tr><td>Curation Earned:</td><td>' + totalCuration + 'STU</td></tr>';
-      summary += '<tr><td>Current Avg Upvote Time:</td><td>' + avgVoteTime + ' minutes. </td></tr>';
-      summary += '<tr><td>Optimized Upvote Time Recommendation:</td><td>' + recVoteTime + ' minutes. </td></tr>';
-      $('#summary').html(summary);
-  }
   
   function loadAll(account, start, votedUser) {
     loadCurations(account, start, votedUser, (lastTrans, voteSummaries) => {
@@ -300,8 +285,6 @@ lds-ellipsis {
                       })
       });;
 
-        
-      adjustSummary();
       lastStart = lastTrans;
     });
   }
@@ -353,10 +336,6 @@ lds-ellipsis {
       <div id="error"></div>
       <div id="loading" style="position: relative; display: none">
       <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
-      </div>
-      <hr>
-      <h1>Summary</h1>
-      <div id="summary"></div>
       </div>
     </body>
 </html>
