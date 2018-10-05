@@ -233,7 +233,7 @@ qd.showPayout && qd.showPayout[0] != "");
   function submitForm() {
       const account = $('#params input[name="account"').val();
       const tagString = $('#params input[name="tags"').val();
-      const tags = tagString != "" ? tags.split(",") : [];
+      const tags = tagString != "" ? tagString.split(",") : [];
       const markdownLink = $('#params input[name="markdownLink"').prop('checked');
       const showPayout = $('#params input[name="showPayout"').prop('checked');
       
