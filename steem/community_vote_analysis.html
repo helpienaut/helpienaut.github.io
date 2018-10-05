@@ -177,11 +177,10 @@ lds-ellipsis {
 
   function getCurations(account, start, votedUser, callback) {
     let lastTrans = start;
-  
+    $('#loading').toggle(true);
     getDelegations(account, delegations => {
         console.log(delegations);
         console.log(`Fetching account history for ${account} at ${start}`);
-        $('#loading').toggle(true);
         client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
           let hasError = false;
           const postFetchPromises = [];
