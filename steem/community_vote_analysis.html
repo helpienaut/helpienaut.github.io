@@ -111,54 +111,54 @@ lds-ellipsis {
                   console.log('Missing account history.... last trans: ' + lastTrans);
               }
           }
-          return callback(processDelegations(delegationTransactions));
+          return processDelegations(delegationTransactions, callback);
       }, (err) => {
           console.log(err);
       });
   }
     
-  function processDelegations(delegationTransactions) {
-      const delegations = {};
+  function processDelegations(delegationTransactions, callback) {
+      client.call('database_api', 'get_dynamic_global_properties', []).then((gpo) => {
+          const steemPerVests = parseFloat(gpo.total_vesting_fund_steem) / parseFloat(gpo.total_vesting_shares);
+          console.log(gpo);
+          console.log(steemPerVests);
+          const delegations = {};
 
-      // Go through the delegation transactions from oldest to newest to find the final delegated amount from each account
-      delegationTransactions.reverse();
+          // Go through the delegation transactions from oldest to newest to find the final delegated amount from each account
+          delegationTransactions.reverse();
 
-      for(var i = 0; i < delegationTransactions.length; i++) {
-          var trans = delegationTransactions[i];
+          for(var i = 0; i < delegationTransactions.length; i++) {
+              var trans = delegationTransactions[i];
 
-          // Check if this is a new delegation or an update to an existing delegation from this account
-          var delegation = delegations[trans.data.delegator];
+              // Check if this is a new delegation or an update to an existing delegation from this account
+              const delegation = delegations[trans.data.delegator];
+              const vestingShares = parseFloat(trans.data.vesting_shares);
 
-          if (delegation) {
-              if (parseFloat(trans.data.vesting_shares) > 0) {
-                  delegation.vesting_shares = trans.data.vesting_shares;
-              } else {
-                  delegations[trans.data.delegator] = null;
+              if (delegation) {
+                  if (vestingShares > 0) {
+                      delegation.vesting_shares = vestingShares;
+                      delegation.delegatedSp = vestingShares * steemPerVests;
+                  } else {
+                      delegations[trans.data.delegator] = null;
+                  }
+              } else if (vestingShares > 0) {
+                  delegations[trans.data.delegator] = {
+                      delegator: trans.data.delegator,
+                      vesting_shares: vestingShares,
+                      delegatedSp: vestingShares * steemPerVests
+                  };
               }
-          } else if (parseFloat(trans.data.vesting_shares) > 0) {
-              delegations[trans.data.delegator] = { delegator: trans.data.delegator, vesting_shares: trans.data.vesting_shares };
           }
-      }
-      
-      // Return a list of all delegations (and filter out any that are 0)
-      return delegations;
+
+          // Return a list of all delegations (and filter out any that are 0)
+          callback(delegations);
+      }, (err) => {
+          console.log(err);
+      });
   }
 
   function appendAnalysis(info) {
-      /**
-      {
-        created: post.created,
-        author: post.author,
-        permlink: post.permlink,
-        optVoteTimeMin: optVote.voteAgeMillis / 60000,
-        optVoteCuration: optVote.voterCuration,
-        accountVoteTimeMin: accountVoteTimeMillis / 60000,
-        accountVoterCuration,
-        optRatio,
-        delegatedVests,
-      }
-      */
-      color = '#ffffff';
+      let color = '#ffffff';
       if (info.optRatio > 2) {
           color = '#ffffdd';
       }
@@ -168,7 +168,8 @@ lds-ellipsis {
       if (info.optRatio > 10) {
           color = '#ffdddd';
       }
-      $('#data-table tr:last').after('<tr style="background-color: ' + color + ';"><td>' + info.author + '</td><td>' + info.numPosts + '</td><td>' + info.voteValue + '</td><td>' + info.delegatedVests + '</td><td>' + info.ratio + '</td></tr>');
+      const avgVoteWeight = Math.ceil(info.totalPercent / info.numPosts);
+      $('#data-table tr:last').after('<tr style="background-color: ' + color + ';"><td>' + info.author + '</td><td>' + info.numPosts + '</td><td>' + avgVoteWeight + '</td><td>' + info.voteValue + '</td><td>' + info.delegatedSp + '</td><td>' + info.ratio + '</td></tr>');
   }
     
   function loadCurations(account, start, votedUser, callback) {
@@ -179,7 +180,6 @@ lds-ellipsis {
     let lastTrans = start;
     $('#loading').toggle(true);
     getDelegations(account, delegations => {
-        console.log(delegations);
         console.log(`Fetching account history for ${account} at ${start}`);
         client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
           let hasError = false;
@@ -212,7 +212,7 @@ lds-ellipsis {
                       const voteRshares = parseInt(accountVote.rshares);
                       const voteValue = voteRshares * totalSbd / totalRshares;
 
-                      const delegatedVests = delegations[post.author] ? delegations[post.author].vesting_shares : "";
+                      const delegatedSp = delegations[post.author] ? delegations[post.author].delegatedSp : 0;
 
                       const voteSummary = voteSummaries[post.author];
                       if (!voteSummary) {
@@ -220,13 +220,16 @@ lds-ellipsis {
                               author: post.author,
                               numPosts: 1,
                               totalVoteValue: voteValue,
-                              delegatedVests,
-                              ratio: 10000 * voteValue / parseFloat(delegatedVests)
+                              delegatedSp,
+                              ratio: voteValue / delegatedSp,
+                              totalPercent: accountVote.percent
                           };
                       } else {
                           voteSummary.numPosts++;
                           voteSummary.totalVoteValue += voteValue;
-                          voteSummary.ratio = 10000 * voteSummary.totalVoteValue / parseFloat(voteSummary.delegatedVests);
+                          voteSummary.delegatedSp = delegatedSp;
+                          voteSummary.ratio = voteSummary.totalVoteValue / delegatedSp;
+                          voteSummary.totalPercent += accountVote.percent;
                       }
 
                       numPosts++;
@@ -276,13 +279,14 @@ lds-ellipsis {
           return bvv - avv;
       }).forEach(author => {
           const voteSummary = voteSummaries[author];
-                      appendAnalysis({
-                          author: voteSummary.author,
-                          numPosts: voteSummary.numPosts,
-                          voteValue: voteSummary.totalVoteValue,
-                          delegatedVests: voteSummary.delegatedVests,
-                          ratio: voteSummary.ratio
-                      })
+              appendAnalysis({
+                  author: voteSummary.author,
+                  numPosts: voteSummary.numPosts,
+                  voteValue: voteSummary.totalVoteValue,
+                  delegatedSp: voteSummary.delegatedSp,
+                  ratio: voteSummary.ratio,
+                  totalPercent: voteSummary.totalPercent
+              })
       });;
 
       lastStart = lastTrans;
@@ -331,7 +335,7 @@ lds-ellipsis {
       </form>
       <hr />
       <table id="data-table" class="table table-striped">
-          <tbody><tr><td>Author</td><td>Num Posts</td><td>Total Vote Value</td><td>Delegated Vests</td><td>Ratio</td></tr>
+          <tbody><tr><td>Author</td><td>Num Posts</td><td>Average Vote Weight</td><td>Total Vote Value</td><td>Delegated SP</td><td>Ratio</td></tr>
           </tbody></table>
       <div id="error"></div>
       <div id="loading" style="position: relative; display: none">
