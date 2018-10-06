@@ -68,7 +68,6 @@ lds-ellipsis {
     
   const reverseAuctionTimeMin = 15;
     
-  let lastStart = -1;
   let account = '';
   let votedUser = '';
     
@@ -81,40 +80,6 @@ lds-ellipsis {
 
   function getAmount(v) {
       return Number(v.split(' ')[0]);
-  }
-    
-  function getDelegations(account, callback) {
-      doGetDelegations(account, -1, [], callback);
-  }
-    
-  function doGetDelegations(account, start, delegationTransactions, callback) {
-      console.log(`Fetching account history for ${account} at ${start}`);
-      client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
-          result.reverse();
-          let lastTrans = start;
-          
-          result.forEach(function(trans) {
-              var op = trans[1].op;
-
-              if(op[0] == 'delegate_vesting_shares' && op[1].delegatee == account) {
-                  delegationTransactions.push({ id: trans[0], data: op[1] });
-              }
-              
-              // Save the ID of the last transaction that was processed.
-              lastTrans = trans[0];
-          });
-
-          if(lastTrans > 0 && lastTrans != start) {
-              return doGetDelegations(account, lastTrans, delegationTransactions, callback);
-          } else {
-              if (lastTrans > 0) {
-                  console.log('Missing account history.... last trans: ' + lastTrans);
-              }
-          }
-          return processDelegations(delegationTransactions, callback);
-      }, (err) => {
-          console.log(err);
-      });
   }
     
   function processDelegations(delegationTransactions, callback) {
@@ -169,42 +134,107 @@ lds-ellipsis {
           color = '#ffdddd';
       }
       const avgVoteWeight = Math.ceil(info.totalPercent / info.numPosts);
-      $('#data-table tr:last').after('<tr style="background-color: ' + color + ';"><td>' + info.author + '</td><td>' + info.numPosts + '</td><td>' + avgVoteWeight + '</td><td>' + info.voteValue + '</td><td>' + info.delegatedSp + '</td><td>' + info.ratio + '</td></tr>');
+      const receivedAvgVoteWeight = Math.ceil(info.receivedTotalPercent / info.receivedNumVotes);
+      $('#data-table tr:last').after('<tr style="background-color: ' + color + ';"><td>' + info.author + '</td><td>' + info.numPosts + '</td><td>' + avgVoteWeight + '</td><td>' + info.voteValue + '</td><td>' + info.delegatedSp + '</td><td>' + info.ratio + '</td><td>' + info.receivedNumVotes + '</td><td>' + receivedAvgVoteWeight + '</td><td>' + info.receivedVoteValue + '</td></tr>');
+  }
+
+  function processAccountHistory(account, start, hooks, callback) {
+    let lastTrans = start;
+    let hasError = false;
+    $('#loading').toggle(true);
+    console.log(`Fetching account history for ${account} at ${start}`);
+    client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
+        result.reverse();
+        result.forEach((trans) => {
+            var op = trans[1].op;
+            if (hooks[op[0]]) {
+                hasError = hasError || hooks[op[0]](trans);
+            }
+            lastTrans = trans[0];
+        });
+        
+        if(lastTrans > 0 && lastTrans != start) {
+            return processAccountHistory(account, lastTrans, hooks, callback);
+        } else {
+            if (lastTrans > 0) {
+                console.log('Missing account history.... last trans: ' + lastTrans);
+                hasError = true;
+            }
+        }
+        
+        if (hasError) {
+            // add indication that loading failed
+            $('#error').html('Error while loading.');
+        }
+        callback();
+    }, (err) => {
+        // add indication that loading failed
+        $('#error').html('Error while loading.');
+    });
   }
     
-  function loadCurations(account, start, votedUser, callback) {
-    return getCurations(account, start, votedUser, callback);
-  }
+  function computeVoteSummaries(account, start, votedUser, callback) {
+    
+        const postFetchPromises = [];
+        const voteSummaries = {};
+        const receivedVoteSummaries = {};
+        const delegationTransactions = [];
+        processAccountHistory(account, start, {
+          'delegate_vesting_shares': (trans) => {
+              const op = trans[1].op;
+              if (op[1].delegatee == account) {
+                  delegationTransactions.push({ id: trans[0], data: op[1] });
+              }
+          },   
+          'author_reward': (trans) => {
+              const op = trans[1].op;
+              const authorReward = op[1];
+              if (Date.parse(Date()) - Date.parse(trans[1].timestamp) <= 7*24*60*60*1000) {
+                  postFetchPromises.push(client.database.call('get_content', [account, authorReward.permlink]).then(post => {
+                      // make map of assigned vote.
+                      if (post.parent_author === '') {
+                          const totalSbd = getAmount(post.total_payout_value) + getAmount(post.curator_payout_value);
+                          
+                          const votes = post.active_votes.filter(v => v.rshares > 0);
+                          const totalRshares = votes.reduce((amt, v) => amt + parseInt(v.rshares), 0);
 
-  function getCurations(account, start, votedUser, callback) {
-    let lastTrans = start;
-    $('#loading').toggle(true);
-    getDelegations(account, delegations => {
-        console.log(`Fetching account history for ${account} at ${start}`);
-        client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
-          let hasError = false;
-          const postFetchPromises = [];
-          const voteSummaries = {};
-          if (!hasError) {
-            result.reverse();
-
-            result.forEach(function(trans) {
-              var op = trans[1].op;
-
-              if (op[0] == 'curation_reward') {
-                  const curationReward = op[1];
-
-                  if (Date.parse(Date()) - Date.parse(trans[1].timestamp) <= 7*24*60*60*1000 && (!votedUser || curationReward.comment_author === votedUser)) {
+                          votes.forEach(vote => {
+                              const voteRshares = parseInt(vote.rshares);
+                              const voteValue = voteRshares * totalSbd / totalRshares;
+                              
+                              const receivedVoteSummary = receivedVoteSummaries[vote.voter];
+                              if (!receivedVoteSummary) {
+                                  receivedVoteSummaries[vote.voter] = {
+                                      voter: vote.voter,
+                                      numVotes: 1,
+                                      totalVoteValue: voteValue,
+                                      totalPercent: vote.percent
+                                  };
+                              } else {
+                                  receivedVoteSummary.numVotes++;
+                                  receivedVoteSummary.totalVoteValue += voteValue;
+                                  receivedVoteSummary.totalPercent += vote.percent;
+                              }
+                          });
+                      }
+                  }, err => {
+                      console.log(`Error fetching ${authorReward.permlink}. Normal if post was deleted.`);
+                      console.log(err);
+                  }));
+              }
+          },
+          'curation_reward': (trans) => {
+              const op = trans[1].op;
+              const curationReward = op[1];
+              
+              if (Date.parse(Date()) - Date.parse(trans[1].timestamp) <= 7*24*60*60*1000 && (!votedUser || curationReward.comment_author === votedUser)) {
                   postFetchPromises.push(client.database.call('get_content', [curationReward.comment_author, curationReward.comment_permlink]).then(post => {
                       if (post.parent_author === '') {
 
-                      const createdTime = post.created;
                       const totalSbd = getAmount(post.total_payout_value) + 
                             getAmount(post.curator_payout_value);
-
                           
                       const votes = post.active_votes.filter(v => v.rshares > 0);
-
                       const totalRshares = votes.reduce((amt, v) => amt + parseInt(v.rshares), 0);
 
                       const accountVote = votes.find(v => v.voter === account);
@@ -212,23 +242,17 @@ lds-ellipsis {
                       const voteRshares = parseInt(accountVote.rshares);
                       const voteValue = voteRshares * totalSbd / totalRshares;
 
-                      const delegatedSp = delegations[post.author] ? delegations[post.author].delegatedSp : 0;
-
                       const voteSummary = voteSummaries[post.author];
                       if (!voteSummary) {
                           voteSummaries[post.author] = {
                               author: post.author,
                               numPosts: 1,
                               totalVoteValue: voteValue,
-                              delegatedSp,
-                              ratio: voteValue / delegatedSp,
                               totalPercent: accountVote.percent
                           };
                       } else {
                           voteSummary.numPosts++;
                           voteSummary.totalVoteValue += voteValue;
-                          voteSummary.delegatedSp = delegatedSp;
-                          voteSummary.ratio = voteSummary.totalVoteValue / delegatedSp;
                           voteSummary.totalPercent += accountVote.percent;
                       }
 
@@ -240,36 +264,26 @@ lds-ellipsis {
                       console.log(error);
                   })); 
                   }
-              }
-              // Save the ID of the last transaction that was processed.
-              lastTrans = trans[0];
+
+              
+              
+          }
+        }, () => {
+            console.log(receivedVoteSummaries);
+            processDelegations(delegationTransactions, (delegations) => {
+                Object.keys(voteSummaries).forEach(author => {
+                    const voteSummary = voteSummaries[author];
+                    const delegatedSp = delegations[voteSummary.author] ? delegations[voteSummary.author].delegatedSp : 0;
+                    voteSummary.delegatedSp = delegatedSp;
+                    voteSummary.ratio = voteSummary.totalVoteValue / delegatedSp;
+                });
+                callback(voteSummaries, receivedVoteSummaries);
             });
-
-            if(lastTrans > 0 && lastTrans != start) {
-            } else {
-              if (lastTrans > 0) {
-                console.log('Missing account history.... last trans: ' + lastTrans);
-                hasError = true;
-              }
-            }
-          }
-
-          if (hasError) {
-            // add indication that loading failed
-            $('#error').html('Error while loading.');
-          }
-          Promise.all(postFetchPromises).then(result => {
-            callback(lastTrans, voteSummaries);
-          });
-        }, (err) => {
-            // add indication that loading failed
-            $('#error').html('Error while loading.');
-        }); 
-    });
+        });            
   }
   
   function loadAll(account, start, votedUser) {
-    loadCurations(account, start, votedUser, (lastTrans, voteSummaries) => {
+    computeVoteSummaries(account, start, votedUser, (voteSummaries, receivedVoteSummaries) => {
       $('#loading').toggle(false);
         
 
@@ -279,17 +293,19 @@ lds-ellipsis {
           return bvv - avv;
       }).forEach(author => {
           const voteSummary = voteSummaries[author];
+          const receivedVoteSummary = receivedVoteSummaries[author] || { numVotes: 0, totalVoteValue: 0, totalPercent: 0};
               appendAnalysis({
                   author: voteSummary.author,
                   numPosts: voteSummary.numPosts,
                   voteValue: voteSummary.totalVoteValue,
                   delegatedSp: voteSummary.delegatedSp,
                   ratio: voteSummary.ratio,
-                  totalPercent: voteSummary.totalPercent
+                  totalPercent: voteSummary.totalPercent,
+                  receivedNumVotes: receivedVoteSummary.numVotes,
+                  receivedVoteValue: receivedVoteSummary.totalVoteValue,
+                  receivedTotalPercent: receivedVoteSummary.totalPercent
               })
       });;
-
-      lastStart = lastTrans;
     });
   }
 
@@ -309,7 +325,7 @@ lds-ellipsis {
       votedUser = qd.votedUser && qd.votedUser[0] != "" ? qd.votedUser[0] : '';
       $('#params input[name="account"').val(account);
       $('#params input[name="votedUser"').val(votedUser);  
-      loadAll(account, lastStart, votedUser);
+      loadAll(account, -1, votedUser);
     }
   });
 </script>
@@ -335,7 +351,7 @@ lds-ellipsis {
       </form>
       <hr />
       <table id="data-table" class="table table-striped">
-          <tbody><tr><td>Author</td><td>Num Posts</td><td>Average Vote Weight</td><td>Total Vote Value</td><td>Delegated SP</td><td>Ratio</td></tr>
+          <tbody><tr><td>Author</td><td>Num Posts</td><td>Average Vote Weight</td><td>Total Vote Value</td><td>Delegated SP</td><td>Ratio</td><td>Received Votes</td><td>Received Average Vote Weight</td><td>Received Vote Value</td></tr>
           </tbody></table>
       <div id="error"></div>
       <div id="loading" style="position: relative; display: none">
