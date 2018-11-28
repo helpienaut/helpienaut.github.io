@@ -170,7 +170,7 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
           const reward = rewards[post.permlink];
           authorPayout = [reward.sbd_payout, reward.steem_payout, reward.vesting_payout]
               .filter(x => x)
-              .join(",\n");
+              .join(",<br />\n");
       }
       const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
       $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + (showPayout ? (post.pending_payout + '</td><td>' + authorPayout + '</td><td>' + post.curator_payout + '</td>') : '</td>') + '</tr>');
