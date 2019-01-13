@@ -160,7 +160,7 @@ lds-ellipsis {
     const filteredPosts = posts.filter(filterFn);
     allPosts.push.apply(allPosts, filteredPosts);
     filteredPosts.forEach(post => {
-      let authorPayout = post.author_payout;
+      let authorPayout = post.author_payout || "";
       if (rewards[post.permlink]) {
           const reward = rewards[post.permlink];
           rewardsTotal.sbd += parseFloat(reward.sbd_payout);
@@ -171,7 +171,7 @@ lds-ellipsis {
               .join(",<br />\n");
       }
       const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
-      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + post.pending_payout + '</td><td>' + authorPayout + '</td><td>' + post.curator_payout + '</td></tr>');
+      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + authorPayout + '</td></tr>');
     });
     updateSummary();
   }
@@ -276,7 +276,7 @@ lds-ellipsis {
       <br />
       <table class="table table-striped" id="data-table">
         <tbody>
-          <tr><td>Time</td><td>Tags</td><td>Post</td><td>Pending Payout</td><td>Author Payout</td><td>Curator Payout</td></tr>
+          <tr><td>Time</td><td>Tags</td><td>Post</td><td>Author Payout</td></tr>
         </tbody>
       </table>
       <div id="summary"></div>
