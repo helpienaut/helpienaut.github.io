@@ -68,10 +68,10 @@ lds-ellipsis {
   const allPosts = [];
   const rewards = {};
   const rewardsTotal = { sbd: 0, steem: 0, vests: 0};
+
   function loadPosts(account, start, callback) {
-    return getPosts(account, start, [], new Set(), callback);
-  }
-  function getPosts(account, start, posts, visitedPermlinks, callback) {
+    const posts = [];
+    const visitedPermlinks = new Map();
     let last_trans = start;
   
     console.log(`Fetching account history for ${account} at ${start}`);
@@ -80,7 +80,10 @@ lds-ellipsis {
       let hasError = false;
       const postFetchPromises = [];
       if (!hasError) {
-        result.reverse();
+        if (result.length > 0) {
+          // Save the min ID of the batch for next fetch.
+          last_trans = result[0][0];
+        }
         result.forEach(function(trans) {
           var op = trans[1].op;
           if(op[0] == 'comment') {
@@ -88,7 +91,6 @@ lds-ellipsis {
             
             if (post.parent_author === '' && post.author === account && post.title) {
               if (!visitedPermlinks.has(post.permlink)) {
-                visitedPermlinks.add(post.permlink);
                 const jsonMetadata = JSON.parse(post.json_metadata);
                 const postData = {
                   author: account,
@@ -98,14 +100,18 @@ lds-ellipsis {
                   tags: jsonMetadata.tags,
                 };
                 posts.push(postData);
+                visitedPermlinks.set(post.permlink, postData);
+              }
+              // remove from existing data if already printed
+              const existingRecord = $('#' + post.permlink);
+              if (existingRecord.length > 0) {
+                  existingRecord.remove();
               }
             }
           } else if (op[0] == 'author_reward') {
               const reward = op[1];
               rewards[reward.permlink] = reward;
           }
-          // Save the ID of the last transaction that was processed.
-          last_trans = trans[0];
         });
         if(last_trans > 0 && last_trans != start) {
         } else {
@@ -115,6 +121,7 @@ lds-ellipsis {
           }
         }
       }
+      posts.reverse();
       if (hasError) {
         // add indication that loading failed
         posts.unshift({
@@ -160,18 +167,21 @@ lds-ellipsis {
     const filteredPosts = posts.filter(filterFn);
     allPosts.push.apply(allPosts, filteredPosts);
     filteredPosts.forEach(post => {
-      let authorPayout = post.author_payout || "";
+      let sbdPayout = "";
+      let steemPayout = "";
+      let vestingPayout = "";
       if (rewards[post.permlink]) {
           const reward = rewards[post.permlink];
           rewardsTotal.sbd += parseFloat(reward.sbd_payout);
           rewardsTotal.steem += parseFloat(reward.steem_payout);
           rewardsTotal.vests += parseFloat(reward.vesting_payout);
-          authorPayout = [reward.sbd_payout, reward.steem_payout, reward.vesting_payout]
-              .filter(x => x)
-              .join(",<br />\n");
+          
+          sbdPayout = reward.sbd_payout || "";
+          steemPayout = reward.steem_payout || "";
+          vestingPayout = reward.vesting_payout || "";
       }
       const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
-      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + authorPayout + '</td></tr>');
+      $('#data-table tr:last').after('<tr id="'+post.permlink+'"><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + sbdPayout + '</td><td>' + steemPayout + '</td><td>' + vestingPayout + '</td></tr>');
     });
     updateSummary();
   }
@@ -276,7 +286,7 @@ lds-ellipsis {
       <br />
       <table class="table table-striped" id="data-table">
         <tbody>
-          <tr><td>Time</td><td>Tags</td><td>Post</td><td>Author Payout</td></tr>
+          <tr><td>Time</td><td>Tags</td><td>Post</td><td>SBD Payout</td><td>STEEM Payout</td><td>Vesting Payout</td></tr>
         </tbody>
       </table>
       <div id="summary"></div>
