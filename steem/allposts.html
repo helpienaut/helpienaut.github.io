@@ -68,10 +68,10 @@ lds-ellipsis {
   const allPosts = [];
   const rewards = {};
   const rewardsTotal = { sbd: 0, steem: 0, vests: 0};
-  function loadPosts(account, start, showPayout, callback) {
-    return getPosts(account, start, [], new Set(), showPayout, callback);
+  function loadPosts(account, start, callback) {
+    return getPosts(account, start, [], new Set(), callback);
   }
-  function getPosts(account, start, posts, visitedPermlinks, showPayout, callback) {
+  function getPosts(account, start, posts, visitedPermlinks, callback) {
     let last_trans = start;
   
     console.log(`Fetching account history for ${account} at ${start}`);
@@ -97,16 +97,6 @@ lds-ellipsis {
                   permlink: post.permlink,
                   tags: jsonMetadata.tags,
                 };
-if (showPayout) {                
-postFetchPromises.push(client.database.call('get_content', [post.author, post.permlink]).then(result => {
-          postData.pending_payout = result.pending_payout_value;
-          postData.author_payout = result.total_payout_value;
-          postData.curator_payout = result.curator_payout_value;
-      }, error => {
-        console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
-        console.log(error);
-      }));
-}
                 posts.push(postData);
               }
             }
@@ -166,7 +156,7 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
       $('#summary').html(($('#data-table tr').length - 1) + ' posts <br>' + rewardsTotalStr);
   }
     
-  function printPosts(posts, filterFn, useMarkdownLink, showPayout) {
+  function printPosts(posts, filterFn, useMarkdownLink) {
     const filteredPosts = posts.filter(filterFn);
     allPosts.push.apply(allPosts, filteredPosts);
     filteredPosts.forEach(post => {
@@ -181,17 +171,17 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
               .join(",<br />\n");
       }
       const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
-      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + (showPayout ? (post.pending_payout + '</td><td>' + authorPayout + '</td><td>' + post.curator_payout + '</td>') : '</td>') + '</tr>');
+      $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + post.pending_payout + '</td><td>' + authorPayout + '</td><td>' + post.curator_payout + '</td></tr>');
     });
     updateSummary();
   }
   
-  function loadAll(account, start, filter, useMarkdownLink, showPayout) {
-    loadPosts(account, start, showPayout, (posts, last_trans) => {
-      printPosts(posts, filter, useMarkdownLink, showPayout);
+  function loadAll(account, start, filter, useMarkdownLink) {
+    loadPosts(account, start, (posts, last_trans) => {
+      printPosts(posts, filter, useMarkdownLink);
       $('#loading').toggle(false);
       if (last_trans > 0 && last_trans != start) {
-        loadAll(account, last_trans, filter, useMarkdownLink, showPayout);
+        loadAll(account, last_trans, filter, useMarkdownLink);
       } else if (last_trans == 0) {
         $('#download').toggle(true);
       }
@@ -235,17 +225,13 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
     if (qd.account && qd.account[0] != "") {
       const account = qd.account[0];
       $('#params input[name="account"').val(account);
-      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, qd.markdownLink && qd.markdownLink[0] != "",
-qd.showPayout && qd.showPayout[0] != "");
+      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, qd.markdownLink && qd.markdownLink[0] != "");
     }
     if (tags.length > 0) {
       $('#params input[name="tags"').val(tags);
     }
     if (qd.markdownLink && qd.markdownLink[0] != "") {
       $('#params input[name="markdownLink"').prop("checked", qd.markdownLink[0]);
-    }
-    if (qd.showPayout && qd.showPayout[0] != "") {
-      $('#params input[name="showPayout"').prop("checked", qd.showPayout[0]);
     }
   });
     
@@ -254,7 +240,6 @@ qd.showPayout && qd.showPayout[0] != "");
       const tagString = $('#params input[name="tags"').val();
       const tags = tagString != "" ? tagString.split(",") : [];
       const markdownLink = $('#params input[name="markdownLink"').prop('checked');
-      const showPayout = $('#params input[name="showPayout"').prop('checked');
       
       $("#data-table tr:gt(0)").detach();
       
@@ -263,8 +248,7 @@ qd.showPayout && qd.showPayout[0] != "");
       rewardsTotal.steem = 0;
       rewardsTotal.vests = 0;
       
-      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, markdownLink,
-showPayout);
+      loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, markdownLink);
   }
 </script>
   </head>
@@ -286,10 +270,6 @@ showPayout);
         <div class="form-check">
             <input type="checkbox" class="form-check-input" id="markdownLink" name="markdownLink" />
             <label for="markdownLink">Use Markdown Link</label>
-        </div>
-        <div class="form-check">
-            <input type="checkbox" class="form-check-input" id="showPayout" name="showPayout" />
-            <label for="showPayout">Show Payout</label>
         </div>
         <input class="btn btn-primary" type="button" onclick="submitForm()" value="Fetch" />
       </form>
