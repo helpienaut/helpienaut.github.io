@@ -67,6 +67,7 @@ lds-ellipsis {
   var client = new dsteem.Client('https://api.steemit.com');
   const allPosts = [];
   const rewards = {};
+  const rewardsTotal = { sbd: 0, steem: 0, vests: 0};
   function loadPosts(account, start, showPayout, callback) {
     return getPosts(account, start, [], new Set(), showPayout, callback);
   }
@@ -157,8 +158,12 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
       callback(posts);
     }); 
   }
-  function updateCount() {
-      $('#counter').html(($('#data-table tr').length - 1) + ' posts');
+  function updateSummary() {
+      let rewardsTotalStr = "";
+      if (rewards) {
+          rewardsTotalStr = "Total Rewards: " + rewardsTotal.sbd.toFixed(3) + " SBD, " + rewardsTotal.steem.toFixed(3) + " STEEM, " + rewardsTotal.vests.toFixed(3) + " VESTS";
+      }
+      $('#summary').html(($('#data-table tr').length - 1) + ' posts <br>' + rewardsTotalStr);
   }
     
   function printPosts(posts, filterFn, useMarkdownLink, showPayout) {
@@ -168,6 +173,9 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
       let authorPayout = post.author_payout;
       if (rewards[post.permlink]) {
           const reward = rewards[post.permlink];
+          rewardsTotal.sbd += parseFloat(reward.sbd_payout);
+          rewardsTotal.steem += parseFloat(reward.steem_payout);
+          rewardsTotal.vests += parseFloat(reward.vesting_payout);
           authorPayout = [reward.sbd_payout, reward.steem_payout, reward.vesting_payout]
               .filter(x => x)
               .join(",<br />\n");
@@ -175,7 +183,7 @@ postFetchPromises.push(client.database.call('get_content', [post.author, post.pe
       const link = useMarkdownLink ? '[' + post.title + '](https://steemit.com/@' + post.author + '/' + post.permlink + ')' : '<a href="https://steemit.com/@' + post.author + '/' + post.permlink + '">' + post.title + '</a>';
       $('#data-table tr:last').after('<tr><td>' + post.timestamp + '</td><td>' + post.tags + '</td><td>' + link + '</td><td>' + (showPayout ? (post.pending_payout + '</td><td>' + authorPayout + '</td><td>' + post.curator_payout + '</td>') : '</td>') + '</tr>');
     });
-    updateCount();
+    updateSummary();
   }
   
   function loadAll(account, start, filter, useMarkdownLink, showPayout) {
@@ -249,6 +257,12 @@ qd.showPayout && qd.showPayout[0] != "");
       const showPayout = $('#params input[name="showPayout"').prop('checked');
       
       $("#data-table tr:gt(0)").detach();
+      
+      // reset data
+      rewardsTotal.sbd = 0;
+      rewardsTotal.steem = 0;
+      rewardsTotal.vests = 0;
+      
       loadAll(account, -1, elt => tags.length > 0 ? elt.tags && elt.tags.filter(t => tags.includes(t)).length > 0 : true, markdownLink,
 showPayout);
   }
@@ -285,7 +299,7 @@ showPayout);
           <tr><td>Time</td><td>Tags</td><td>Post</td><td>Pending Payout</td><td>Author Payout</td><td>Curator Payout</td></tr>
         </tbody>
       </table>
-      <div id="counter"></div>
+      <div id="summary"></div>
       <div id="loading" style="position: relative; display: none">
         <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
       </div>
