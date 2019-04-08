@@ -59,12 +59,13 @@ lds-ellipsis {
   }
 }
     </style>
-    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
-    <script src="https://unpkg.com/dsteem@^0.10.1/dist/dsteem.js"></script>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.0/jquery.min.js"></script>
+<script src="https://cdn.steemjs.com/lib/latest/steem.min.js"></script>
 <script src="dist/jszip.min.js"></script>
 <script async="" src="https://cdn.rawgit.com/eligrey/FileSaver.js/e9d941381475b5df8b7d7691013401e171014e89/FileSaver.min.js"></script>
 <script>
-  var client = new dsteem.Client('https://api.steemit.com');
+  steem.api.setOptions({ url: 'https://api.steemit.com' });
+
   const allPosts = [];
   const rewards = {};
   const rewardsTotal = { sbd: 0, steem: 0, vests: 0};
@@ -76,8 +77,9 @@ lds-ellipsis {
   
     console.log(`Fetching account history for ${account} at ${start}`);
     $('#loading').toggle(true);
-    client.database.call('get_account_history', [account, start, (start < 0) ? 10000 : Math.min(start, 10000)]).then((result) => {
-      let hasError = false;
+
+    steem.api.getAccountHistory(account, start, (start < 0) ? 10000 : Math.min(start, 10000), function(err, result) {
+      let hasError = err;
       const postFetchPromises = [];
       if (!hasError) {
         if (result.length > 0) {
@@ -135,26 +137,9 @@ lds-ellipsis {
       Promise.all(postFetchPromises).then(result => {
         callback(posts, last_trans);
       });
-    }, (err) => {
-      let hasError = false;
-      if (err) {
-        console.log('error');
-        console.log(err);
-        hasError = true;
-      }
-      if (hasError) {
-        // add indication that loading failed
-        posts.unshift({
-          author: account,
-          timestamp: 'Error while loading',
-          title: '',
-          permlink: '',
-          tags: '',
-        });
-      }
-      callback(posts);
     }); 
   }
+
   function updateSummary() {
       let rewardsTotalStr = "";
       if (rewards) {
@@ -203,11 +188,17 @@ lds-ellipsis {
     }
     const zip = new JSZip();
     const promises = posts.map(post => {
-      return client.database.call('get_content', [post.author, post.permlink]).then(result => {        
-        zip.file(`${post.permlink}.txt`, result.body);
-      }, error => {
-        console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
-        console.log(error);
+      return new Promise(function(resolve, reject) {
+        steem.api.getContent(post.author, post.permlink, function(err, result) {
+          if (!err) {
+            zip.file(`${post.permlink}.txt`, result.body);
+            resolve();
+          } else {
+            console.log(`Error fetching ${post.permlink}. Normal if post was deleted.`);
+            console.log(err);
+            reject(err);
+          }
+        });
       });
     });
       
