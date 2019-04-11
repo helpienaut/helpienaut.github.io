@@ -65,9 +65,11 @@ lds-ellipsis {
   steem.api.setOptions({ url: 'https://api.steemit.com' });
 
   const allTransactions = [];
+  const allMarketActions = [];
 
   function loadTransactions(account, start, callback) {
     const transactions = [];
+    const marketActions = [];
     const visitedPermlinks = new Map();
     let last_trans = start;
   
@@ -97,6 +99,15 @@ lds-ellipsis {
                       to: payload.contractPayload.to,
                     };
                     transactions.push(txData);
+                } else if (payload.contractName === 'market' && payload.contractAction !== 'cancel') {
+                    const marketData = {
+                      time: trans[1].timestamp,
+                      symbol: payload.contractPayload.symbol,
+                      action: payload.contractAction,
+                      quantity: payload.contractPayload.quantity,
+                      price: payload.contractPayload.price,
+                    };
+                    marketActions.push(marketData);
                 } else {
                     console.log(payload);
                 }
@@ -112,6 +123,7 @@ lds-ellipsis {
         }
       }
       transactions.reverse();
+      marketActions.reverse();
       if (hasError) {
         // add indication that loading failed
         transactions.unshift({
@@ -122,7 +134,7 @@ lds-ellipsis {
           to: '',
         });
       }
-      callback(transactions, last_trans);
+      callback(transactions, marketActions, last_trans);
     }); 
   }
     
@@ -134,9 +146,17 @@ lds-ellipsis {
     });
   }
   
+  function printMarketActions(marketActions, filterFn) {
+    const filteredMarketActions = marketActions.filter(filterFn);
+    marketActions.forEach(marketAction => {
+      $('#market-table tr:last').after('<tr><td>' + marketAction.time + '</td><td>' + marketAction.symbol + '</td><td>' + marketAction.action + '</td><td>' + marketAction.quantity + '</td><td>' + marketAction.price + '</td></tr>');
+    });
+  }
+  
   function loadAll(account, start, filter) {
-    loadTransactions(account, start, (transactions, last_trans) => {
+    loadTransactions(account, start, (transactions, marketActions, last_trans) => {
       printTransactions(transactions, filter);
+      printMarketActions(marketActions, filter);
       $('#loading').toggle(false);
       if (last_trans > 0 && last_trans != start) {
         loadAll(account, last_trans, filter);
@@ -185,9 +205,17 @@ lds-ellipsis {
         <input class="btn btn-primary" type="button" onclick="submitForm()" value="Fetch" />
       </form>
       <br />
+      <h3>Token Transfers</h2>
       <table class="table table-striped" id="data-table">
         <tbody>
           <tr><td>Time</td><td>Symbol</td><td>Quantity</td><td>To</td><td>Memo</td></tr>
+        </tbody>
+      </table>
+      <br />
+      <h3>Market Actions</h2>
+      <table class="table table-striped" id="market-table">
+        <tbody>
+            <tr><td>Time</td><td>Symbol</td><td>Action</td><td>Quantity</td><td>Price</td></tr>
         </tbody>
       </table>
       <div id="summary"></div>
