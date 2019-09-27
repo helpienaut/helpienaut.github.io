@@ -66,7 +66,7 @@ lds-ellipsis {
     
   const client = new dsteem.Client('https://api.steemit.com');
     
-  const reverseAuctionTimeMin = 15;
+  const reverseAuctionTimeMin = 5;
     
   let lastStart = -1;
   let account = '';
@@ -83,12 +83,16 @@ lds-ellipsis {
     return Number(v.split(' ')[0]);
   }
 
+  function curationCurve(r) {
+    return r / Math.sqrt(r + 2 * 2000000000000);
+  }
+
   function computeCuration(info) {
       const {vote, createdTime, prevRshares, totalRshares, totalSbd} = info;
       const voteAgeMillis = Date.parse(vote.time) - Date.parse(createdTime);
       const voteRshares = parseInt(vote.rshares);
       const voteValue = voteRshares * totalSbd / totalRshares;
-      const curation = (Math.sqrt(voteRshares+prevRshares) - Math.sqrt(prevRshares))*totalSbd/(4*Math.sqrt(totalRshares));
+      const curation = (curationCurve(voteRshares+prevRshares) - curationCurve(prevRshares))*totalSbd/(2*curationCurve(totalRshares));
       const nobodyCurationPortion = Math.max(0,Math.min((1000*60*reverseAuctionTimeMin - voteAgeMillis)/(1000*60*reverseAuctionTimeMin), 1))*curation;
       const voterCurationPortion = curation - nobodyCurationPortion;
       const authorVotePortion = 3*voteRshares*totalSbd / (4*totalRshares);
@@ -317,7 +321,7 @@ lds-ellipsis {
           <h2>Curation Optimization Report</h2>
           <p> Problems? Suggestions? File issues <a href="https://github.com/helpienaut/helpienaut.github.io/issues">here!</a></p>
       
-          <p>Assumes 15 minute curation window. From curations rewarded in the last 7 days.</p>
+          <p>Assumes 5 minute curation window. From curations rewarded in the last 7 days.</p>
       </div>
       <form method="get" id="params">
           <div class="form-group">
